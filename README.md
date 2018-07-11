@@ -52,8 +52,10 @@ FOO is bar
 - [ ] Add "filters" à la `jq`
   - [ ] base64: `base64@VAR=encoded value`
   - [ ] url: `VAR@url=unescaped URL`
-- [ ] Make `go get`-able
-- [ ] Dockerize for easier build (no need for local `go`)
+- [ ] Better builds
+  - [x] `go get`-able
+  - [ ] Ensure dependency is fetched for `go get`
+  - [ ] Dockerize for easier build (no need for local `go`)
 
 ## License
 
