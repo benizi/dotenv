@@ -141,24 +141,32 @@ func main() {
 		sources = append(sources, source)
 	}
 
+	defaulted := false
 	if len(sources) == 0 {
+		defaulted = true
 		sources = []varsource{{kind: file, data: ".env"}}
 	}
 
+	anyOK := false
 	for len(sources) > 0 {
 		setting := sources[0]
 		parsed, err := setting.parse()
 		if err == nil {
 			vars = append(vars, parsed...)
 			sources = sources[1:]
-		} else if len(vars) == 0 {
-			log.Fatal("Couldn't parse argument: %#+v", setting)
-		} else {
-			for _, leftover := range sources {
-				cmd = append(cmd, leftover.data)
-			}
-			break
+			anyOK = true
+			continue
 		}
+		if !anyOK && defaulted {
+			log.Print("No .env files/params were processed")
+			sources = sources[1:]
+		} else if !anyOK {
+			log.Fatalf("Couldn't parse argument: %#+v", setting)
+		}
+		for _, leftover := range sources {
+			cmd = append(cmd, leftover.data)
+		}
+		break
 	}
 
 	if len(cmd) == 0 {
