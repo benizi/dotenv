@@ -41,6 +41,7 @@ type varsource struct {
 	data     string
 	kind     sourcetype
 	explicit bool
+	optional bool
 }
 
 func (src varsource) parse() ([]string, error) {
@@ -154,7 +155,8 @@ func main() {
 	}
 
 	if addDefault {
-		sources = append([]varsource{{kind: file, data: ".env"}}, sources...)
+		dotenv := varsource{kind: file, data: ".env", optional: true}
+		sources = append([]varsource{dotenv}, sources...)
 	}
 
 	debug.Printf("Sources: %#+v\n", sources)
@@ -165,7 +167,7 @@ func main() {
 		if err != nil && source.explicit {
 			log.Printf("Failed to read source: %#+v", source)
 			log.Fatalf("Error was: %v", err)
-		} else if err != nil {
+		} else if err != nil && !source.optional {
 			debug.Printf("Failed to read source: %#+v", source)
 			debug.Printf("Treating as cmd.")
 			precmd := []string{}
@@ -175,6 +177,10 @@ func main() {
 			}
 			cmd = append(precmd, cmd...)
 			break
+		} else if err != nil {
+			debug.Printf("Failed to read source: %#+v", source)
+			debug.Printf("Ignoring.")
+			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", source.data, err)
 		}
 		vars = append(vars, parsed...)
 		sources = sources[1:]
