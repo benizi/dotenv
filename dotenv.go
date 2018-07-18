@@ -105,7 +105,6 @@ const (
 	runcmd operation = iota
 	dump
 	names
-	dockerRun
 )
 
 func main() {
@@ -150,9 +149,6 @@ func main() {
 			continue
 		} else if arg == "-n" {
 			mode = names
-			continue
-		} else if arg == "-r" {
-			mode = dockerRun
 			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
@@ -209,13 +205,7 @@ func main() {
 		}
 	}
 
-	if mode == dockerRun {
-		pre := []string{"docker", "run"}
-		for _, name := range varnames {
-			pre = append(pre, "-e", name)
-		}
-		cmd = append(pre, cmd...)
-	} else if len(cmd) == 0 {
+	if len(cmd) == 0 {
 		cmd = []string{"env"}
 	}
 
