@@ -99,6 +99,7 @@ func (src varsource) parseFile() ([]string, error) {
 }
 
 func main() {
+	debug = os.Getenv("DEBUG") != ""
 	args := os.Args[1:]
 	var cmd []string
 	var sources []varsource
