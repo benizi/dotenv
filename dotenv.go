@@ -104,6 +104,7 @@ func main() {
 	var cmd []string
 	var sources []varsource
 	var vars []string
+	justOutput := false
 
 	doSplit, splitIndex := false, 0
 	for i, arg := range args {
@@ -134,6 +135,9 @@ func main() {
 			source.data = args[0]
 			args = args[1:]
 			source.explicit = true
+		} else if arg == "-o" {
+			justOutput = true
+			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
@@ -183,6 +187,13 @@ func main() {
 	debug.Printf("Post-source parsing:")
 	debug.Printf("args: %q\n", args)
 	debug.Printf("cmd: %q\n", cmd)
+
+	if justOutput {
+		for _, env := range vars {
+			fmt.Println(env)
+		}
+		return
+	}
 
 	proc := exec.Command(cmd[0], cmd[1:]...)
 	proc.Stdin = os.Stdin
