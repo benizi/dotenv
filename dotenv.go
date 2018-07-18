@@ -38,8 +38,9 @@ const (
 )
 
 type varsource struct {
-	data string
-	kind sourcetype
+	data     string
+	kind     sourcetype
+	explicit bool
 }
 
 func (src varsource) parse() ([]string, error) {
@@ -114,64 +115,73 @@ func main() {
 		args, cmd = args[0:splitIndex], args[splitIndex+1:]
 	}
 
+	debug.Printf("Pre-source parsing:")
 	debug.Printf("args: %q\n", args)
 	debug.Printf("cmd: %q\n", cmd)
 
+	addDefault := true
 	for len(args) > 0 {
 		arg := args[0]
 		args = args[1:]
+		debug.Printf("arg[%s] args[%v]", arg, args)
 		source := varsource{kind: file, data: arg}
 		if arg == "-f" {
 			debug.Printf("[%s] = File flag", arg)
 			if len(args) == 0 {
 				log.Fatal("Flag `-f` requires a filename")
 			}
-			source.data = args[1]
-			args = args[2:]
+			source.data = args[0]
+			args = args[1:]
+			source.explicit = true
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
-		} else if doSplit || len(sources) == 0 {
-			debug.Printf("[%s] = defaulted to file source", arg)
+		} else if doSplit {
+			debug.Printf("[%s] = pre-split file source", arg)
+			source.explicit = true
 		} else {
-			debug.Printf("[%s] = start of command", arg)
-			args, cmd = []string{}, args[:]
-			break
+			debug.Printf("[%s] = attempt file", arg)
 		}
 		sources = append(sources, source)
+		if source.explicit {
+			addDefault = false
+		}
 	}
 
-	defaulted := false
-	if len(sources) == 0 {
-		defaulted = true
-		sources = []varsource{{kind: file, data: ".env"}}
+	if addDefault {
+		sources = append([]varsource{{kind: file, data: ".env"}}, sources...)
 	}
 
-	anyOK := false
+	debug.Printf("Sources: %#+v\n", sources)
+
 	for len(sources) > 0 {
-		setting := sources[0]
-		parsed, err := setting.parse()
-		if err == nil {
-			vars = append(vars, parsed...)
-			sources = sources[1:]
-			anyOK = true
-			continue
+		source := sources[0]
+		parsed, err := source.parse()
+		if err != nil && source.explicit {
+			log.Printf("Failed to read source: %#+v", source)
+			log.Fatalf("Error was: %v", err)
+		} else if err != nil {
+			debug.Printf("Failed to read source: %#+v", source)
+			debug.Printf("Treating as cmd.")
+			precmd := []string{}
+			for _, source := range sources {
+				precmd = append(precmd, source.data)
+				sources = []varsource{}
+			}
+			cmd = append(precmd, cmd...)
+			break
 		}
-		if !anyOK && defaulted {
-			log.Print("No .env files/params were processed")
-			sources = sources[1:]
-		} else if !anyOK {
-			log.Fatalf("Couldn't parse argument: %#+v", setting)
-		}
-		for _, leftover := range sources {
-			cmd = append(cmd, leftover.data)
-		}
-		break
+		vars = append(vars, parsed...)
+		sources = sources[1:]
 	}
 
 	if len(cmd) == 0 {
 		cmd = []string{"env"}
 	}
+
+	debug.Printf("Post-source parsing:")
+	debug.Printf("args: %q\n", args)
+	debug.Printf("cmd: %q\n", cmd)
 
 	proc := exec.Command(cmd[0], cmd[1:]...)
 	proc.Stdin = os.Stdin
