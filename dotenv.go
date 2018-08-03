@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"syscall"
 
 	"github.com/mattn/go-shellwords"
@@ -105,6 +106,7 @@ const (
 	runcmd operation = iota
 	dump
 	names
+	values
 )
 
 func main() {
@@ -149,6 +151,9 @@ func main() {
 			continue
 		} else if arg == "-n" {
 			mode = names
+			continue
+		} else if arg == "-p" {
+			mode = values
 			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
@@ -219,6 +224,20 @@ func main() {
 		toDump = vars
 	case names:
 		toDump = varnames
+	case values:
+		for _, key := range cmd {
+			found := false
+			prefix := key + "="
+			for _, val := range vars {
+				if strings.HasPrefix(val, prefix) {
+					toDump = append(toDump, val[len(prefix):])
+					found = true
+				}
+			}
+			if !found {
+				log.Fatalf("Variable not set by dotenv: %s", key)
+			}
+		}
 	}
 
 	if toDump != nil {
