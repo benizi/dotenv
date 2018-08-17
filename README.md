@@ -18,7 +18,7 @@ go build
 
 # Example
 
-
+```sh
 ## File w/ vars:
 $ cat .env
 FOO=bar
