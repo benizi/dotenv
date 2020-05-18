@@ -19,6 +19,20 @@ var (
 	assignment = regexp.MustCompile(`^` + identifier + `=`)
 	getID      = regexp.MustCompile(`^(` + identifier + `)=`)
 	comment    = regexp.MustCompile(`^\s*#`)
+	usage      = `Usage: dotenv [options] [mode] [envs] [--] [cmd [args]]
+
+Modes:
+  -o (output) / -dump = dump all
+  -n (names) / -names = print names of assigned vars
+  -p (values) / -vals = print values of specified vars
+
+Options:
+  -s (shell) = Parse files as shell scripts ('export BLAH="value"')
+
+Envs:
+  NAME=VALUE
+  filename
+`
 )
 
 type debugging bool
@@ -163,7 +177,13 @@ func main() {
 		args = args[1:]
 		debug.Printf("arg[%s] args[%v]", arg, args)
 		source := varsource{kind: file, data: arg}
-		if arg == "-f" {
+		if strings.HasPrefix(arg, "--") {
+			arg = arg[1:]
+		}
+		if arg == "-h" || arg == "-help" {
+			os.Stdout.Write([]byte(usage))
+			os.Exit(0)
+		} else if arg == "-f" {
 			debug.Printf("[%s] = File flag", arg)
 			if len(args) == 0 {
 				log.Fatal("Flag `-f` requires a filename")
