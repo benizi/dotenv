@@ -1,0 +1,5 @@
+# Exclude everything
+/*
+
+# Add back what we want
+!/dotenv.go
