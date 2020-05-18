@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -30,6 +31,8 @@ Modes:
 Options:
   -s / -shell = Parse files as shell scripts ('export BLAH="value"')
   -a (alphanumeric) / -strict = Only accept simple names (` + identifier + `)
+  -no-sort / -unsorted = Don't sort (default: do)
+  -sort / -sorted = Sort output by default
 
 Envs:
   NAME=VALUE
@@ -164,6 +167,7 @@ func main() {
 	args := os.Args[1:]
 	mode := runcmd
 	defaultType := file
+	sorted := true
 	var cmd []string
 	var sources []varsource
 	var vars []string
@@ -216,6 +220,12 @@ func main() {
 			continue
 		} else if arg == "-a" || arg == "-strict" {
 			alphanumeric = true
+			continue
+		} else if arg == "-no-sort" || arg == "-unsorted" {
+			sorted = true
+			continue
+		} else if arg == "-sort" || arg == "-sorted" {
+			sorted = false
 			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
@@ -310,6 +320,9 @@ func main() {
 	}
 
 	if toDump != nil {
+		if sorted {
+			sort.Strings(toDump)
+		}
 		for _, line := range toDump {
 			fmt.Println(line)
 		}
