@@ -209,12 +209,15 @@ func main() {
 			source.explicit = true
 		} else if arg == "-o" || arg == "-dump" {
 			mode = dump
+			addDefault = false
 			continue
 		} else if arg == "-n" || arg == "-names" {
 			mode = names
+			addDefault = false
 			continue
 		} else if arg == "-p" || arg == "-vals" {
 			mode = values
+			addDefault = false
 			continue
 		} else if arg == "-s" || arg == "-shell" {
 			defaultType = shell
