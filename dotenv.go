@@ -215,6 +215,7 @@ func main() {
 			continue
 		} else if arg == "-p" || arg == "-vals" {
 			mode = values
+			continue
 		} else if arg == "-s" || arg == "-shell" {
 			defaultType = shell
 			continue
@@ -296,8 +297,10 @@ func main() {
 	debug.Printf("Post-source parsing:")
 	debug.Printf("args: %q\n", args)
 	debug.Printf("cmd: %q\n", cmd)
+	debug.Printf("mode: %s\n", mode)
 
 	var toDump []string
+	dumping := true
 	switch mode {
 	case dump:
 		toDump = vars
@@ -324,9 +327,11 @@ func main() {
 				log.Printf("Variable not set by dotenv: %s", key)
 			}
 		}
+	case runcmd:
+		dumping = false
 	}
 
-	if toDump != nil {
+	if dumping {
 		if sorted {
 			sort.Strings(toDump)
 		}
