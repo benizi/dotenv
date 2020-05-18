@@ -22,9 +22,9 @@ var (
 	usage      = `Usage: dotenv [options] [mode] [envs] [--] [cmd [args]]
 
 Modes:
-  -o (output) / -dump = dump all
-  -n (names) / -names = print names of assigned vars
-  -p (values) / -vals = print values of specified vars
+  -o (output) = dump all
+  -n (names) = print names of assigned vars
+  -p (values) = print values of specified vars
 
 Options:
   -s (shell) = Parse files as shell scripts ('export BLAH="value"')
