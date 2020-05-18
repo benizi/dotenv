@@ -101,6 +101,7 @@ func (src varsource) parseFile() ([]string, error) {
 }
 
 func (src varsource) parseShell() ([]string, error) {
+	debug.Printf("Trying Shell: %s\n", src.data)
 	var vars []string
 	file, err := os.Open(src.data)
 	if err != nil {
@@ -116,6 +117,10 @@ func (src varsource) parseShell() ([]string, error) {
 			continue
 		}
 		tokens, err := parser.Parse(line)
+		for err != nil && scanner.Scan() {
+			line = line + "\n" + scanner.Text()
+			tokens, err = parser.Parse(line)
+		}
 		if err != nil {
 			debug.Printf("Skipping [%s]\n", line)
 			continue
