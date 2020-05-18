@@ -22,12 +22,12 @@ var (
 	usage      = `Usage: dotenv [options] [mode] [envs] [--] [cmd [args]]
 
 Modes:
-  -o (output) = dump all
-  -n (names) = print names of assigned vars
-  -p (values) = print values of specified vars
+  -o (output) / -dump = dump all
+  -n (names) / -names = print names of assigned vars
+  -p (values) / -vals = print values of specified vars
 
 Options:
-  -s (shell) = Parse files as shell scripts ('export BLAH="value"')
+  -s / -shell = Parse files as shell scripts ('export BLAH="value"')
 
 Envs:
   NAME=VALUE
@@ -191,15 +191,15 @@ func main() {
 			source.data = args[0]
 			args = args[1:]
 			source.explicit = true
-		} else if arg == "-o" {
+		} else if arg == "-o" || arg == "-dump" {
 			mode = dump
 			continue
-		} else if arg == "-n" {
+		} else if arg == "-n" || arg == "-names" {
 			mode = names
 			continue
-		} else if arg == "-p" {
+		} else if arg == "-p" || arg == "-vals" {
 			mode = values
-		} else if arg == "-s" {
+		} else if arg == "-s" || arg == "-shell" {
 			defaultType = shell
 			continue
 		} else if assignment.MatchString(arg) {
