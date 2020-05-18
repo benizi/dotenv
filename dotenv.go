@@ -19,6 +19,7 @@ var (
 	assignment = regexp.MustCompile(`^` + identifier + `=`)
 	getID      = regexp.MustCompile(`^(` + identifier + `)=`)
 	comment    = regexp.MustCompile(`^\s*#`)
+	nonstrict  = regexp.MustCompile(`^[^\s=]+=`)
 	usage      = `Usage: dotenv [options] [mode] [envs] [--] [cmd [args]]
 
 Modes:
@@ -28,11 +29,13 @@ Modes:
 
 Options:
   -s / -shell = Parse files as shell scripts ('export BLAH="value"')
+  -a (alphanumeric) / -strict = Only accept simple names (` + identifier + `)
 
 Envs:
   NAME=VALUE
   filename
 `
+	alphanumeric = false
 )
 
 type debugging bool
@@ -81,12 +84,16 @@ func (src varsource) parseFile() ([]string, error) {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanLines)
+	matcher := nonstrict
+	if alphanumeric {
+		matcher = assignment
+	}
 	for scanner.Scan() {
 		line := scanner.Text()
 		if comment.MatchString(line) {
 			continue
 		}
-		if assignment.MatchString(line) {
+		if matcher.MatchString(line) {
 			vars = append(vars, line)
 		}
 	}
@@ -201,6 +208,9 @@ func main() {
 			mode = values
 		} else if arg == "-s" || arg == "-shell" {
 			defaultType = shell
+			continue
+		} else if arg == "-a" || arg == "-strict" {
+			alphanumeric = true
 			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
