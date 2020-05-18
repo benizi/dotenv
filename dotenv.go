@@ -31,11 +31,12 @@ func (d debugging) Printf(format string, args ...interface{}) {
 	}
 }
 
-type sourcetype int
+type sourcetype string
 
 const (
-	file sourcetype = iota
-	raw
+	file  sourcetype = "file"
+	shell            = "shell"
+	raw              = "raw"
 )
 
 type varsource struct {
@@ -49,6 +50,8 @@ func (src varsource) parse() ([]string, error) {
 	switch src.kind {
 	case file:
 		return src.parseFile()
+	case shell:
+		return src.parseShell()
 	case raw:
 		return []string{src.data}, nil
 	}
@@ -56,6 +59,27 @@ func (src varsource) parse() ([]string, error) {
 }
 
 func (src varsource) parseFile() ([]string, error) {
+	var vars []string
+	file, err := os.Open(src.data)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if comment.MatchString(line) {
+			continue
+		}
+		if assignment.MatchString(line) {
+			vars = append(vars, line)
+		}
+	}
+	return vars, nil
+}
+
+func (src varsource) parseShell() ([]string, error) {
 	var vars []string
 	file, err := os.Open(src.data)
 	if err != nil {
@@ -100,19 +124,20 @@ func (src varsource) parseFile() ([]string, error) {
 	return vars, nil
 }
 
-type operation int
+type operation string
 
 const (
-	runcmd operation = iota
-	dump
-	names
-	values
+	runcmd operation = "runcmd"
+	dump             = "dump"
+	names            = "names"
+	values           = "values"
 )
 
 func main() {
 	debug = os.Getenv("DEBUG") != ""
 	args := os.Args[1:]
 	mode := runcmd
+	defaultType := file
 	var cmd []string
 	var sources []varsource
 	var vars []string
@@ -154,6 +179,8 @@ func main() {
 			continue
 		} else if arg == "-p" {
 			mode = values
+		} else if arg == "-s" {
+			defaultType = shell
 			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
@@ -164,6 +191,7 @@ func main() {
 		} else {
 			debug.Printf("[%s] = attempt file", arg)
 		}
+		debug.Printf("adding source: %#+v\n", source)
 		sources = append(sources, source)
 		if source.explicit {
 			addDefault = false
@@ -173,6 +201,12 @@ func main() {
 	if addDefault {
 		dotenv := varsource{kind: file, data: ".env", optional: true}
 		sources = append([]varsource{dotenv}, sources...)
+	}
+
+	for i, src := range sources {
+		if src.kind == file {
+			sources[i].kind = defaultType
+		}
 	}
 
 	debug.Printf("Sources: %#+v\n", sources)
