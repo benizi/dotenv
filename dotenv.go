@@ -314,7 +314,14 @@ func main() {
 				}
 			}
 			if !found {
-				log.Fatalf("Variable not set by dotenv: %s", key)
+				val := os.Getenv(key)
+				if val != "" {
+					toDump = append(toDump, val)
+					found = true
+				}
+			}
+			if !found {
+				log.Printf("Variable not set by dotenv: %s", key)
 			}
 		}
 	}
