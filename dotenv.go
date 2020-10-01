@@ -153,6 +153,30 @@ func (src varsource) parseShell() ([]string, error) {
 	return vars, nil
 }
 
+func uniqVarsByName(allvars []string) ([]string, []string) {
+	vars := []string{}
+	varnames := []string{}
+	varindex := map[string]int{}
+
+	for _, v := range allvars {
+		name := v
+		match := getID.FindStringSubmatch(v)
+		if match != nil {
+			name = match[1]
+		}
+		idx, seen := varindex[name]
+		if seen {
+			vars[idx] = v
+		} else {
+			varnames = append(varnames, name)
+			varindex[name] = len(vars)
+			vars = append(vars, v)
+		}
+	}
+
+	return varnames, vars
+}
+
 type operation string
 
 const (
@@ -285,13 +309,8 @@ func main() {
 		sources = sources[1:]
 	}
 
-	varnames := []string{}
-	for _, v := range vars {
-		match := getID.FindStringSubmatch(v)
-		if match != nil {
-			varnames = append(varnames, match[1])
-		}
-	}
+	var varnames []string
+	varnames, vars = uniqVarsByName(vars)
 
 	if len(cmd) == 0 {
 		cmd = []string{"env"}
