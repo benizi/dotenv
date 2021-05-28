@@ -57,6 +57,7 @@ const (
 	file  sourcetype = "file"
 	shell            = "shell"
 	raw              = "raw"
+	osenv            = "osenv"
 )
 
 type varsource struct {
@@ -74,6 +75,8 @@ func (src varsource) parse() ([]string, error) {
 		return src.parseShell()
 	case raw:
 		return []string{src.data}, nil
+	case osenv:
+		return os.Environ(), nil
 	}
 	return nil, fmt.Errorf("Unknown varsource kind: %v (data: %v)", src.kind, src.data)
 }
@@ -192,6 +195,7 @@ func main() {
 	mode := runcmd
 	defaultType := file
 	sorted := true
+	clearEnv := false
 	var cmd []string
 	var sources []varsource
 	var vars []string
@@ -251,6 +255,9 @@ func main() {
 		} else if arg == "-sort" || arg == "-sorted" {
 			sorted = false
 			continue
+		} else if arg == "-u" || arg == "-clear" {
+			clearEnv = true
+			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
@@ -269,6 +276,11 @@ func main() {
 		if src.kind == file {
 			sources[i].kind = defaultType
 		}
+	}
+
+	debug.Printf("Prepending osenv?: %v\n", !clearEnv)
+	if !clearEnv {
+		sources = append([]varsource{{kind: osenv}}, sources...)
 	}
 
 	debug.Printf("Sources: %#+v\n", sources)
@@ -356,7 +368,7 @@ func main() {
 	proc.Stdin = os.Stdin
 	proc.Stdout = os.Stdout
 	proc.Stderr = os.Stderr
-	proc.Env = append(os.Environ(), vars...)
+	proc.Env = vars
 	if err := proc.Start(); err != nil {
 		log.Fatalf("proc.Start: %v", err)
 	}
