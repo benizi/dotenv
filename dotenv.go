@@ -211,7 +211,6 @@ func main() {
 	debug.Printf("args: %q\n", args)
 	debug.Printf("cmd: %q\n", cmd)
 
-	addDefault := true
 	for len(args) > 0 {
 		arg := args[0]
 		args = args[1:]
@@ -233,15 +232,12 @@ func main() {
 			source.explicit = true
 		} else if arg == "-o" || arg == "-dump" {
 			mode = dump
-			addDefault = false
 			continue
 		} else if arg == "-n" || arg == "-names" {
 			mode = names
-			addDefault = false
 			continue
 		} else if arg == "-p" || arg == "-vals" {
 			mode = values
-			addDefault = false
 			continue
 		} else if arg == "-s" || arg == "-shell" {
 			defaultType = shell
@@ -266,15 +262,8 @@ func main() {
 		}
 		debug.Printf("adding source: %#+v\n", source)
 		sources = append(sources, source)
-		if source.explicit {
-			addDefault = false
-		}
 	}
 
-	if addDefault {
-		dotenv := varsource{kind: file, data: ".env", optional: true}
-		sources = append([]varsource{dotenv}, sources...)
-	}
 
 	for i, src := range sources {
 		if src.kind == file {
@@ -313,7 +302,7 @@ func main() {
 	varnames, vars = uniqVarsByName(vars)
 
 	if len(cmd) == 0 {
-		cmd = []string{"env"}
+		cmd = []string{"sh"}
 	}
 
 	debug.Printf("Post-source parsing:")
