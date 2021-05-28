@@ -60,6 +60,23 @@ const (
 	osenv            = "osenv"
 )
 
+func (kind sourcetype) rank() int {
+	switch kind {
+	case raw:
+		return 0
+	case osenv:
+		return 1
+	case file, shell:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func (kind sourcetype) reverse() bool {
+	return kind == raw
+}
+
 type varsource struct {
 	data     string
 	kind     sourcetype
@@ -156,6 +173,53 @@ func (src varsource) parseShell() ([]string, error) {
 	return vars, nil
 }
 
+type priority struct {
+	source varsource
+	pos    int
+}
+
+type prioritysort struct {
+	sources []priority
+}
+
+func (p *prioritysort) Len() int {
+	return len(p.sources)
+}
+func (p *prioritysort) Swap(i, j int) {
+	p.sources[i], p.sources[j] = p.sources[j], p.sources[i]
+}
+func (p *prioritysort) Less(i, j int) bool {
+	a, b := p.sources[i], p.sources[j]
+	ka, kb := a.source.kind, b.source.kind
+	ra, rb := ka.rank(), kb.rank()
+	pa, pb := a.pos, b.pos
+	switch {
+	case ra != rb:
+		return ra < rb
+	case ka.reverse():
+		return pb < pa
+	default:
+		return pa < pb
+	}
+}
+
+func (p *prioritysort) sort() []varsource {
+	sort.Sort(p)
+	ret := []varsource{}
+	for _, i := range p.sources {
+		ret = append(ret, i.source)
+	}
+	return ret
+}
+
+func bypriority(sources []varsource) *prioritysort {
+	p := &prioritysort{}
+	for i, s := range sources {
+		p.sources = append(p.sources, priority{s, i})
+	}
+	return p
+}
+
 func uniqVarsByName(allvars []string) ([]string, []string) {
 	vars := []string{}
 	varnames := []string{}
@@ -167,10 +231,8 @@ func uniqVarsByName(allvars []string) ([]string, []string) {
 		if match != nil {
 			name = match[1]
 		}
-		idx, seen := varindex[name]
-		if seen {
-			vars[idx] = v
-		} else {
+		_, seen := varindex[name]
+		if !seen {
 			varnames = append(varnames, name)
 			varindex[name] = len(vars)
 			vars = append(vars, v)
@@ -219,7 +281,7 @@ func main() {
 		arg := args[0]
 		args = args[1:]
 		debug.Printf("arg[%s] args[%v]", arg, args)
-		source := varsource{kind: file, data: arg}
+		source := varsource{kind: defaultType, data: arg}
 		if strings.HasPrefix(arg, "--") {
 			arg = arg[1:]
 		}
@@ -271,7 +333,6 @@ func main() {
 		sources = append(sources, source)
 	}
 
-
 	for i, src := range sources {
 		if src.kind == file {
 			sources[i].kind = defaultType
@@ -285,8 +346,15 @@ func main() {
 
 	debug.Printf("Sources: %#+v\n", sources)
 
-	for len(sources) > 0 {
-		source := sources[0]
+	debug.Printf("bypriority: %#+v\n", bypriority(sources))
+	for i, s := range bypriority(sources).sources {
+		debug.Printf(" [%d]=%#+v\n", i, s)
+	}
+	sources = bypriority(sources).sort()
+
+	debug.Printf("Sorted: %#+v\n", sources)
+
+	for i, source := range sources {
 		parsed, err := source.parse()
 		if err != nil && source.explicit {
 			log.Printf("Failed to read source: %#+v", source)
@@ -295,9 +363,8 @@ func main() {
 			debug.Printf("Failed to read source: %#+v", source)
 			debug.Printf("Treating as cmd.")
 			precmd := []string{}
-			for _, source := range sources {
+			for _, source := range sources[i:] {
 				precmd = append(precmd, source.data)
-				sources = []varsource{}
 			}
 			cmd = append(precmd, cmd...)
 			break
@@ -307,7 +374,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", source.data, err)
 		}
 		vars = append(vars, parsed...)
-		sources = sources[1:]
 	}
 
 	var varnames []string
