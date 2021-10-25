@@ -29,10 +29,10 @@ Modes:
   -p (values) / -vals = print values of specified vars
 
 Options:
-  -s / -shell = Parse files as shell scripts ('export BLAH="value"')
-  -a (alphanumeric) / -strict = Only accept simple names (` + identifier + `)
-  -no-sort / -unsorted = Don't sort (default: do)
-  -sort / -sorted = Sort output by default
+  -s / --shell = Parse files as shell scripts ('export BLAH="value"')
+  -a (alphanumeric) / --strict = Only accept simple names (` + identifier + `)
+  --no-sort / --unsorted = Don't sort (default: do)
+  --sort / --sorted = Sort output by default
 
 Envs:
   NAME=VALUE
