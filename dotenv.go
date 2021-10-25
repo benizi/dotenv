@@ -297,6 +297,10 @@ func (src varsource) parseLax() ([]envvar, error) {
 			debug.Printf("  COMMENT[%s]", line)
 			continue
 		}
+		if trimRegex(&data, laxempty) {
+			debug.Printf("  EMPTYLINE[%q]", line)
+			continue
+		}
 		hasID, idmatch := trimRegexMatches(&data, laxID)
 		debug.Printf("  ID?(%v) [%#+v]", hasID, idmatch)
 		name, val := "", ""
