@@ -48,6 +48,7 @@ var (
 	laxequals  = regexp.MustCompile(`^[^\S\n]*=[^\S\n]*`)
 	laxempty   = regexp.MustCompile(`^[^\S\n]*(\n|$)`)
 	laxcomment = regexp.MustCompile(`^[^\S\n]*#[^\n]*(\n|$)`)
+	laxtrailer = regexp.MustCompile(`^((?s:.)+?)\s+#`)
 	laxqstart  = regexp.MustCompile(`^(['"])`)
 	laxescaped = regexp.MustCompile(`^\\(?s:.)`)
 	laxsingleq = regexp.MustCompile(`^((?:[^\\']|\\(?s:.))*)'`)
@@ -334,6 +335,10 @@ func (src varsource) parseLax() ([]envvar, error) {
 						return nil, fmt.Errorf("Couldn't read to end [%q]", data)
 					}
 					val = lvals[1]
+					trailmatch := laxtrailer.FindStringSubmatch(val)
+					if trailmatch != nil {
+						val = trailmatch[1]
+					}
 					debug.Printf("SIMPLEVAL[%q]", val)
 				}
 			default:
