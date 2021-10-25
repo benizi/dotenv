@@ -334,7 +334,7 @@ func (src varsource) parseLax() ([]envvar, error) {
 					if !toend {
 						return nil, fmt.Errorf("Couldn't read to end [%q]", data)
 					}
-					val = lvals[1]
+					val = strings.TrimSpace(lvals[1])
 					trailmatch := laxtrailer.FindStringSubmatch(val)
 					if trailmatch != nil {
 						val = trailmatch[1]
