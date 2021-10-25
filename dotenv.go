@@ -228,9 +228,14 @@ func uniqVarsByName(allvars []string) ([]string, []string) {
 
 	for _, v := range allvars {
 		name := v
-		match := getID.FindStringSubmatch(v)
-		if match != nil {
-			name = match[1]
+		if alphanumeric {
+			if match := getID.FindStringSubmatch(v); match != nil {
+				name = match[1]
+			}
+		} else {
+			if parts := strings.SplitN(v, "=", 2); parts != nil {
+				name = parts[0]
+			}
 		}
 		_, seen := varindex[name]
 		if !seen {
