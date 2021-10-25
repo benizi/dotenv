@@ -53,6 +53,7 @@ var (
 	laxsingleq = regexp.MustCompile(`^((?:[^\\']|\\(?s:.))*)'`)
 	laxdoubleq = regexp.MustCompile(`^((?:[^\\"]|\\(?s:.))*)"`)
 	laxdiscard = regexp.MustCompile(`^([^\n]*)(?:\n|$)`)
+	tointerp   = regexp.MustCompile(`\$\{([^}]+)\}`)
 )
 
 type debugging bool
@@ -91,6 +92,10 @@ func (kind sourcetype) rank() int {
 
 func (kind sourcetype) reverse() bool {
 	return kind == raw
+}
+
+func (kind sourcetype) interpolates() bool {
+	return kind == laxfile || kind == shell
 }
 
 type varsource struct {
@@ -355,6 +360,33 @@ func (src varsource) parseOsEnviron() ([]envvar, error) {
 	return vars, nil
 }
 
+func substitutevars(env, raw []envvar) []envvar {
+	parsed := []envvar{}
+	vals := map[string]string{}
+	// Include original env vars, even if they're being cleared
+	for _, v := range os.Environ() {
+		e := parsevar(v)
+		vals[e.name] = e.val
+	}
+	for _, v := range env {
+		vals[v.name] = v.val
+	}
+	for _, r := range raw {
+		subbed := tointerp.ReplaceAllStringFunc(r.val, func(s string) string {
+			parts := tointerp.FindStringSubmatch(s)
+			if len(parts) > 1 {
+				if val, ok := vals[parts[1]]; ok {
+					return val
+				}
+			}
+			return ""
+		})
+		vals[r.name] = subbed
+		parsed = append(parsed, envvar{r.name, subbed})
+	}
+	return parsed
+}
+
 type priority struct {
 	source varsource
 	pos    int
@@ -563,6 +595,9 @@ func main() {
 			debug.Printf("Failed to read source: %#+v", source)
 			debug.Printf("Ignoring.")
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", source.data, err)
+		}
+		if source.kind.interpolates() {
+			parsed = substitutevars(vars, parsed)
 		}
 		vars = append(vars, parsed...)
 	}
