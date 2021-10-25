@@ -54,10 +54,11 @@ func (d debugging) Printf(format string, args ...interface{}) {
 type sourcetype string
 
 const (
-	file  sourcetype = "file"
-	shell            = "shell"
-	raw              = "raw"
-	osenv            = "osenv"
+	notype sourcetype = "notype"
+	file              = "file"
+	shell             = "shell"
+	raw               = "raw"
+	osenv             = "osenv"
 )
 
 func (kind sourcetype) rank() int {
@@ -255,7 +256,9 @@ func main() {
 	debug = os.Getenv("DEBUG") != ""
 	args := os.Args[1:]
 	mode := runcmd
-	defaultType := file
+	var defaultType sourcetype
+	defaultType = file
+	specifiedDefault := false
 	sorted := true
 	clearEnv := false
 	var cmd []string
@@ -277,11 +280,24 @@ func main() {
 	debug.Printf("args: %q\n", args)
 	debug.Printf("cmd: %q\n", cmd)
 
+	setDefaultType := func(t sourcetype) {
+		defaultType = t
+		for i, s := range sources {
+			if s.kind == notype {
+				sources[i].kind = defaultType
+			}
+		}
+		specifiedDefault = true
+	}
+
 	for len(args) > 0 {
 		arg := args[0]
 		args = args[1:]
 		debug.Printf("arg[%s] args[%v]", arg, args)
-		source := varsource{kind: defaultType, data: arg}
+		source := varsource{kind: notype, data: arg}
+		if specifiedDefault {
+			source.kind = defaultType
+		}
 		if strings.HasPrefix(arg, "--") {
 			arg = arg[1:]
 		}
@@ -306,7 +322,7 @@ func main() {
 			mode = values
 			continue
 		} else if arg == "-s" || arg == "-shell" {
-			defaultType = shell
+			setDefaultType(shell)
 			continue
 		} else if arg == "-a" || arg == "-strict" {
 			alphanumeric = true
@@ -333,11 +349,7 @@ func main() {
 		sources = append(sources, source)
 	}
 
-	for i, src := range sources {
-		if src.kind == file {
-			sources[i].kind = defaultType
-		}
-	}
+	setDefaultType(defaultType)
 
 	debug.Printf("Prepending osenv?: %v\n", !clearEnv)
 	if !clearEnv {
