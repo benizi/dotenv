@@ -50,7 +50,7 @@ var (
 	laxcomment = regexp.MustCompile(`^[^\S\n]*#[^\n]*(\n|$)`)
 	laxtrailer = regexp.MustCompile(`^((?s:.)+?)\s+#`)
 	laxqstart  = regexp.MustCompile(`^(['"])`)
-	laxescaped = regexp.MustCompile(`^\\(?s:.)`)
+	laxescaped = regexp.MustCompile(`\\(?s:.)`)
 	laxsingleq = regexp.MustCompile(`^((?:[^\\']|\\(?s:.))*)'`)
 	laxdoubleq = regexp.MustCompile(`^((?:[^\\"]|\\(?s:.))*)"`)
 	laxdiscard = regexp.MustCompile(`^([^\n]*)(?:\n|$)`)
@@ -323,7 +323,7 @@ func (src varsource) parseLax() ([]envvar, error) {
 						return nil, fmt.Errorf("Unclosed %s-quoted value", qkind)
 					}
 					val = unquoter(qvals[1])
-					debug.Printf("%s-QUOTED VAL[%q]", strings.ToUpper(qkind), val)
+					debug.Printf("%s-QUOTED RAW[%q] VAL[%q]", strings.ToUpper(qkind), qvals[1], val)
 					debug.Printf("  BEFORE[%q]", dbglines(data))
 					if !trimRegex(&data, laxcomment) {
 						trimRegex(&data, laxdiscard)
