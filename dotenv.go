@@ -30,7 +30,7 @@ Modes:
 
 Options:
   -s / --shell = Parse files as shell scripts ('export BLAH="value"')
-  -a (alphanumeric) / --strict = Only accept simple names (` + identifier + `)
+  -a (alphanumeric) / --strict-vars = Only accept simple names (` + identifier + `)
   --no-sort / --unsorted = Don't sort (default: do)
   --sort / --sorted = Sort output by default
 
@@ -324,7 +324,7 @@ func main() {
 		} else if arg == "-s" || arg == "-shell" {
 			setDefaultType(shell)
 			continue
-		} else if arg == "-a" || arg == "-strict" {
+		} else if arg == "-a" || arg == "-strict-vars" {
 			alphanumeric = true
 			continue
 		} else if arg == "-no-sort" || arg == "-unsorted" {
