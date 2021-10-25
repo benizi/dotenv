@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -41,6 +42,19 @@ Envs:
 	alphanumeric = false
 )
 
+// Variables for parsing Python-dotenv-style files "lax" = poorly-defined
+var (
+	laxID      = regexp.MustCompile(`^(?:[^\S\n]*export\b)?[^\S\n]*([^\s=#]+)`)
+	laxequals  = regexp.MustCompile(`^[^\S\n]*=[^\S\n]*`)
+	laxempty   = regexp.MustCompile(`^[^\S\n]*(\n|$)`)
+	laxcomment = regexp.MustCompile(`^[^\S\n]*#[^\n]*(\n|$)`)
+	laxqstart  = regexp.MustCompile(`^(['"])`)
+	laxescaped = regexp.MustCompile(`^\\(?s:.)`)
+	laxsingleq = regexp.MustCompile(`^((?:[^\\']|\\(?s:.))*)'`)
+	laxdoubleq = regexp.MustCompile(`^((?:[^\\"]|\\(?s:.))*)"`)
+	laxdiscard = regexp.MustCompile(`^([^\n]*)(?:\n|$)`)
+)
+
 type debugging bool
 
 var debug debugging
@@ -54,11 +68,12 @@ func (d debugging) Printf(format string, args ...interface{}) {
 type sourcetype string
 
 const (
-	notype sourcetype = "notype"
-	file              = "file"
-	shell             = "shell"
-	raw               = "raw"
-	osenv             = "osenv"
+	notype  sourcetype = "notype"
+	file               = "file"
+	shell              = "shell"
+	raw                = "raw"
+	osenv              = "osenv"
+	laxfile            = "laxfile"
 )
 
 func (kind sourcetype) rank() int {
@@ -67,7 +82,7 @@ func (kind sourcetype) rank() int {
 		return 0
 	case osenv:
 		return 1
-	case file, shell:
+	case file, shell, laxfile:
 		return 2
 	default:
 		return 3
@@ -91,6 +106,8 @@ func (src varsource) parse() ([]string, error) {
 		return src.parseFile()
 	case shell:
 		return src.parseShell()
+	case laxfile:
+		return src.parseLax()
 	case raw:
 		return []string{src.data}, nil
 	case osenv:
@@ -170,6 +187,148 @@ func (src varsource) parseShell() ([]string, error) {
 			debug.Printf("TODO: %q\n", tokens)
 			continue
 		}
+	}
+	return vars, nil
+}
+
+func dbglines(s string) string {
+	lines := strings.SplitN(s, "\n", 4)
+	if len(lines) > 3 {
+		lines = lines[0:2]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Find regex submatches, but also trim them off the front of the string
+func trimRegexMatches(s *string, r *regexp.Regexp) (bool, []string) {
+	matches := r.FindStringSubmatch(*s)
+	if matches == nil {
+		return false, nil
+	}
+	*s = (*s)[len(matches[0]):]
+	return true, matches
+}
+
+// Trim a match off the front of the string, but just return whether it matched
+func trimRegex(s *string, r *regexp.Regexp) bool {
+	matched, _ := trimRegexMatches(s, r)
+	return matched
+}
+
+var (
+	// substitutions valid for single-quoted strings
+	laxsqsubs = map[byte]string{
+		'\'': "'",
+		'\\': "\\",
+	}
+	// substitutions valid for double-quoted strings
+	laxdqsubs = map[byte]string{
+		'\'': "'",
+		'\\': "\\",
+		'"':  "\"",
+		'a':  "\a",
+		'b':  "\b",
+		'f':  "\f",
+		'n':  "\n",
+		'r':  "\r",
+		't':  "\t",
+		'v':  "\v",
+	}
+)
+
+func laxsubsq(e string) string {
+	if r, ok := laxsqsubs[e[1]]; ok {
+		return r
+	}
+	log.Printf("Invalid single quote escape (%q)", e)
+	return e
+}
+
+func laxparsesq(s string) string {
+	return laxescaped.ReplaceAllStringFunc(s, laxsubsq)
+}
+
+func laxsubdq(e string) string {
+	if r, ok := laxdqsubs[e[1]]; ok {
+		return r
+	}
+	log.Printf("Invalid double quote escape (%q)", e)
+	return e
+}
+
+func laxparsedq(s string) string {
+	return laxescaped.ReplaceAllStringFunc(s, laxsubdq)
+}
+
+// Parse a Python-dotenv style file (allows some quoting, interpolation)
+func (src varsource) parseLax() ([]string, error) {
+	vars := []string{}
+	rawdata, err := ioutil.ReadFile(src.data)
+	if err != nil {
+		return nil, err
+	}
+	data := string(rawdata)
+	for len(data) > 0 {
+		debug.Printf("")
+		debug.Printf("PARSING %q", dbglines(data))
+		lines := strings.SplitN(data, "\n", 2)
+		line := lines[0]
+		if trimRegex(&data, laxcomment) {
+			debug.Printf("  COMMENT[%s]", line)
+			continue
+		}
+		hasID, idmatch := trimRegexMatches(&data, laxID)
+		debug.Printf("  ID?(%v) [%#+v]", hasID, idmatch)
+		name, val := "", ""
+		switch {
+		case hasID:
+			name = idmatch[1]
+			debug.Printf("  HASID NAME[%s]", name)
+			switch {
+			case trimRegex(&data, laxcomment):
+				debug.Printf("EMPTYCOMM[%s]", line)
+			case trimRegex(&data, laxempty):
+				debug.Printf("EMPTYVAL[%s]", line)
+			case trimRegex(&data, laxequals):
+				debug.Printf("  HASEQ remaining:[%q]", dbglines(data))
+				hasQ, qmatch := trimRegexMatches(&data, laxqstart)
+				if hasQ {
+					qkind, qmatcher, unquoter := "double", laxdoubleq, laxparsedq
+					if qmatch[1] == "'" {
+						qkind, qmatcher, unquoter = "single", laxsingleq, laxparsesq
+					}
+					hasMatch, qvals := trimRegexMatches(&data, qmatcher)
+					if !hasMatch {
+						debug.Printf("Unclosed %s-quoted value [%q]", qkind, data)
+						return nil, fmt.Errorf("Unclosed %s-quoted value", qkind)
+					}
+					val = unquoter(qvals[1])
+					debug.Printf("%s-QUOTED VAL[%q]", strings.ToUpper(qkind), val)
+					debug.Printf("  BEFORE[%q]", dbglines(data))
+					if !trimRegex(&data, laxcomment) {
+						trimRegex(&data, laxdiscard)
+					}
+					debug.Printf("  AFTER [%q]", dbglines(data))
+				} else {
+					toend, lvals := trimRegexMatches(&data, laxdiscard)
+					if !toend {
+						return nil, fmt.Errorf("Couldn't read to end [%q]", data)
+					}
+					val = lvals[1]
+					debug.Printf("SIMPLEVAL[%q]", val)
+				}
+			default:
+				log.Printf("Invalid line (%q)", line)
+				debug.Printf("FIXME")
+				trimRegex(&data, laxdiscard)
+				continue
+			}
+		default:
+			log.Printf("Invalid line (%q)", line)
+			trimRegex(&data, laxdiscard)
+			continue
+		}
+		vars = append(vars, name+"="+val)
 	}
 	return vars, nil
 }
@@ -262,7 +421,7 @@ func main() {
 	args := os.Args[1:]
 	mode := runcmd
 	var defaultType sourcetype
-	defaultType = file
+	defaultType = laxfile
 	specifiedDefault := false
 	sorted := true
 	clearEnv := false
@@ -328,6 +487,9 @@ func main() {
 			continue
 		} else if arg == "-s" || arg == "-shell" {
 			setDefaultType(shell)
+			continue
+		} else if arg == "-x" || arg == "-strict" {
+			setDefaultType(file)
 			continue
 		} else if arg == "-a" || arg == "-strict-vars" {
 			alphanumeric = true
