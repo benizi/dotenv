@@ -100,7 +100,21 @@ type varsource struct {
 	optional bool
 }
 
-func (src varsource) parse() ([]string, error) {
+type envvar struct{ name, val string }
+
+func parsevar(s string) envvar {
+	parts := strings.SplitN(s, "=", 2)
+	name, val := "", ""
+	if len(parts) > 0 {
+		name = parts[0]
+	}
+	if len(parts) > 1 {
+		val = parts[1]
+	}
+	return envvar{name, val}
+}
+
+func (src varsource) parse() ([]envvar, error) {
 	switch src.kind {
 	case file:
 		return src.parseFile()
@@ -109,15 +123,15 @@ func (src varsource) parse() ([]string, error) {
 	case laxfile:
 		return src.parseLax()
 	case raw:
-		return []string{src.data}, nil
+		return []envvar{parsevar(src.data)}, nil
 	case osenv:
-		return os.Environ(), nil
+		return src.parseOsEnviron()
 	}
 	return nil, fmt.Errorf("Unknown varsource kind: %v (data: %v)", src.kind, src.data)
 }
 
-func (src varsource) parseFile() ([]string, error) {
-	var vars []string
+func (src varsource) parseFile() ([]envvar, error) {
+	var vars []envvar
 	file, err := os.Open(src.data)
 	if err != nil {
 		return nil, err
@@ -135,15 +149,15 @@ func (src varsource) parseFile() ([]string, error) {
 			continue
 		}
 		if matcher.MatchString(line) {
-			vars = append(vars, line)
+			vars = append(vars, parsevar(line))
 		}
 	}
 	return vars, nil
 }
 
-func (src varsource) parseShell() ([]string, error) {
+func (src varsource) parseShell() ([]envvar, error) {
 	debug.Printf("Trying Shell: %s\n", src.data)
-	var vars []string
+	var vars []envvar
 	file, err := os.Open(src.data)
 	if err != nil {
 		return nil, err
@@ -173,7 +187,7 @@ func (src varsource) parseShell() ([]string, error) {
 			continue
 		}
 		if assignment.MatchString(tokens[0]) {
-			vars = append(vars, tokens[0])
+			vars = append(vars, parsevar(tokens[0]))
 		} else if name.MatchString(tokens[0]) && len(tokens) > 1 {
 			key := tokens[0]
 			val := tokens[1]
@@ -182,7 +196,7 @@ func (src varsource) parseShell() ([]string, error) {
 			} else {
 				debug.Printf("TODO: %q\n", tokens)
 			}
-			vars = append(vars, fmt.Sprintf("%s=%s", key, val))
+			vars = append(vars, envvar{key, val})
 		} else {
 			debug.Printf("TODO: %q\n", tokens)
 			continue
@@ -261,8 +275,8 @@ func laxparsedq(s string) string {
 }
 
 // Parse a Python-dotenv style file (allows some quoting, interpolation)
-func (src varsource) parseLax() ([]string, error) {
-	vars := []string{}
+func (src varsource) parseLax() ([]envvar, error) {
+	vars := []envvar{}
 	rawdata, err := ioutil.ReadFile(src.data)
 	if err != nil {
 		return nil, err
@@ -328,7 +342,15 @@ func (src varsource) parseLax() ([]string, error) {
 			trimRegex(&data, laxdiscard)
 			continue
 		}
-		vars = append(vars, name+"="+val)
+		vars = append(vars, envvar{name, val})
+	}
+	return vars, nil
+}
+
+func (src varsource) parseOsEnviron() ([]envvar, error) {
+	vars := []envvar{}
+	for _, s := range os.Environ() {
+		vars = append(vars, parsevar(s))
 	}
 	return vars, nil
 }
@@ -380,26 +402,16 @@ func bypriority(sources []varsource) *prioritysort {
 	return p
 }
 
-func uniqVarsByName(allvars []string) ([]string, []string) {
-	vars := []string{}
+func uniqVarsByName(allvars []envvar) ([]string, []envvar) {
+	vars := []envvar{}
 	varnames := []string{}
 	varindex := map[string]int{}
 
 	for _, v := range allvars {
-		name := v
-		if alphanumeric {
-			if match := getID.FindStringSubmatch(v); match != nil {
-				name = match[1]
-			}
-		} else {
-			if parts := strings.SplitN(v, "=", 2); parts != nil {
-				name = parts[0]
-			}
-		}
-		_, seen := varindex[name]
+		_, seen := varindex[v.name]
 		if !seen {
-			varnames = append(varnames, name)
-			varindex[name] = len(vars)
+			varnames = append(varnames, v.name)
+			varindex[v.name] = len(vars)
 			vars = append(vars, v)
 		}
 	}
@@ -427,7 +439,7 @@ func main() {
 	clearEnv := false
 	var cmd []string
 	var sources []varsource
-	var vars []string
+	var vars []envvar
 
 	doSplit, splitIndex := false, 0
 	for i, arg := range args {
@@ -555,8 +567,7 @@ func main() {
 		vars = append(vars, parsed...)
 	}
 
-	var varnames []string
-	varnames, vars = uniqVarsByName(vars)
+	_, vars = uniqVarsByName(vars)
 
 	if len(cmd) == 0 {
 		cmd = []string{"sh"}
@@ -567,27 +578,24 @@ func main() {
 	debug.Printf("cmd: %q\n", cmd)
 	debug.Printf("mode: %s\n", mode)
 
-	var toDump []string
+	var toDump []envvar
 	dumping := true
 	switch mode {
-	case dump:
+	case dump, names:
 		toDump = vars
-	case names:
-		toDump = varnames
 	case values:
 		for _, key := range cmd {
 			found := false
-			prefix := key + "="
-			for _, val := range vars {
-				if strings.HasPrefix(val, prefix) {
-					toDump = append(toDump, val[len(prefix):])
+			for _, v := range vars {
+				if v.name == key {
+					toDump = append(toDump, v)
 					found = true
 				}
 			}
 			if !found {
 				val := os.Getenv(key)
 				if val != "" {
-					toDump = append(toDump, val)
+					toDump = append(toDump, parsevar(val))
 					found = true
 				}
 			}
@@ -601,10 +609,28 @@ func main() {
 
 	if dumping {
 		if sorted {
-			sort.Strings(toDump)
+			dumpnames := []string{}
+			byname := map[string]envvar{}
+			sorteddump := []envvar{}
+			for _, v := range toDump {
+				dumpnames = append(dumpnames, v.name)
+				byname[v.name] = v
+			}
+			sort.Strings(dumpnames)
+			for _, n := range dumpnames {
+				sorteddump = append(sorteddump, byname[n])
+			}
+			toDump = sorteddump
 		}
-		for _, line := range toDump {
-			fmt.Println(line)
+		for _, v := range toDump {
+			switch mode {
+			case dump:
+				fmt.Printf("%s=%s\n", v.name, v.val)
+			case names:
+				fmt.Println(v.name)
+			case values:
+				fmt.Println(v.val)
+			}
 		}
 		return
 	}
@@ -613,7 +639,11 @@ func main() {
 	proc.Stdin = os.Stdin
 	proc.Stdout = os.Stdout
 	proc.Stderr = os.Stderr
-	proc.Env = vars
+	env := []string{}
+	for _, v := range vars {
+		env = append(env, fmt.Sprintf("%s=%s", v.name, v.val))
+	}
+	proc.Env = env
 	if err := proc.Start(); err != nil {
 		log.Fatalf("proc.Start: %v", err)
 	}
