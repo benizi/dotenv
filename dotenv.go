@@ -256,10 +256,10 @@ var (
 )
 
 func laxsubsq(e string) string {
-	if r, ok := laxsqsubs[e[1]]; ok {
+	r, ok := laxsqsubs[e[1]]
+	if ok {
 		return r
 	}
-	log.Printf("Invalid single quote escape (%q)", e)
 	return e
 }
 
@@ -268,10 +268,10 @@ func laxparsesq(s string) string {
 }
 
 func laxsubdq(e string) string {
-	if r, ok := laxdqsubs[e[1]]; ok {
+	r, ok := laxdqsubs[e[1]]
+	if ok {
 		return r
 	}
-	log.Printf("Invalid double quote escape (%q)", e)
 	return e
 }
 
