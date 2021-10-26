@@ -95,10 +95,6 @@ func (kind sourcetype) reverse() bool {
 	return kind == raw
 }
 
-func (kind sourcetype) interpolates() bool {
-	return kind == laxfile || kind == shell
-}
-
 type varsource struct {
 	data     string
 	kind     sourcetype
@@ -106,7 +102,10 @@ type varsource struct {
 	optional bool
 }
 
-type envvar struct{ name, val string }
+type envvar struct {
+	name, val string
+	allowsubs bool
+}
 
 func parsevar(s string) envvar {
 	parts := strings.SplitN(s, "=", 2)
@@ -117,7 +116,7 @@ func parsevar(s string) envvar {
 	if len(parts) > 1 {
 		val = parts[1]
 	}
-	return envvar{name, val}
+	return envvar{name, val, false}
 }
 
 func (src varsource) parse() ([]envvar, error) {
@@ -202,7 +201,7 @@ func (src varsource) parseShell() ([]envvar, error) {
 			} else {
 				debug.Printf("TODO: %q\n", tokens)
 			}
-			vars = append(vars, envvar{key, val})
+			vars = append(vars, envvar{key, val, true})
 		} else {
 			debug.Printf("TODO: %q\n", tokens)
 			continue
@@ -303,7 +302,7 @@ func (src varsource) parseLax() ([]envvar, error) {
 		}
 		hasID, idmatch := trimRegexMatches(&data, laxID)
 		debug.Printf("  ID?(%v) [%#+v]", hasID, idmatch)
-		name, val := "", ""
+		name, val, allowsubs := "", "", true
 		switch {
 		case hasID:
 			name = idmatch[1]
@@ -320,6 +319,7 @@ func (src varsource) parseLax() ([]envvar, error) {
 					qkind, qmatcher, unquoter := "double", laxdoubleq, laxparsedq
 					if qmatch[1] == "'" {
 						qkind, qmatcher, unquoter = "single", laxsingleq, laxparsesq
+						allowsubs = false
 					}
 					hasMatch, qvals := trimRegexMatches(&data, qmatcher)
 					if !hasMatch {
@@ -356,7 +356,7 @@ func (src varsource) parseLax() ([]envvar, error) {
 			trimRegex(&data, laxdiscard)
 			continue
 		}
-		vars = append(vars, envvar{name, val})
+		vars = append(vars, envvar{name, val, allowsubs})
 	}
 	return vars, nil
 }
@@ -381,17 +381,20 @@ func substitutevars(env, raw []envvar) []envvar {
 		vals[v.name] = v.val
 	}
 	for _, r := range raw {
-		subbed := tointerp.ReplaceAllStringFunc(r.val, func(s string) string {
-			parts := tointerp.FindStringSubmatch(s)
-			if len(parts) > 1 {
-				if val, ok := vals[parts[1]]; ok {
-					return val
+		subbed := r.val
+		if r.allowsubs {
+			subbed = tointerp.ReplaceAllStringFunc(subbed, func(s string) string {
+				parts := tointerp.FindStringSubmatch(s)
+				if len(parts) > 1 {
+					if val, ok := vals[parts[1]]; ok {
+						return val
+					}
 				}
-			}
-			return ""
-		})
+				return ""
+			})
+		}
 		vals[r.name] = subbed
-		parsed = append(parsed, envvar{r.name, subbed})
+		parsed = append(parsed, envvar{r.name, subbed, r.allowsubs})
 	}
 	return parsed
 }
@@ -605,9 +608,7 @@ func main() {
 			debug.Printf("Ignoring.")
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", source.data, err)
 		}
-		if source.kind.interpolates() {
-			parsed = substitutevars(vars, parsed)
-		}
+		parsed = substitutevars(vars, parsed)
 		vars = append(vars, parsed...)
 	}
 
