@@ -34,6 +34,7 @@ Options:
   -a (alphanumeric) / --strict-vars = Only accept simple names (` + identifier + `)
   --no-sort / --unsorted = Don't sort (default: do)
   --sort / --sorted = Sort output by default
+  -q / --quiet = Don't print errors for invalid lines
 
 Envs:
   NAME=VALUE
@@ -59,7 +60,7 @@ var (
 
 type debugging bool
 
-var debug debugging
+var debug, warn debugging
 
 func (d debugging) Printf(format string, args ...interface{}) {
 	if d {
@@ -346,13 +347,13 @@ func (src varsource) parseLax() ([]envvar, error) {
 					debug.Printf("SIMPLEVAL[%q]", val)
 				}
 			default:
-				log.Printf("Invalid line (%q)", line)
+				warn.Printf("Invalid line (%q)", line)
 				debug.Printf("FIXME")
 				trimRegex(&data, laxdiscard)
 				continue
 			}
 		default:
-			log.Printf("Invalid line (%q)", line)
+			warn.Printf("Invalid line (%q)", line)
 			trimRegex(&data, laxdiscard)
 			continue
 		}
@@ -474,6 +475,7 @@ const (
 
 func main() {
 	debug = os.Getenv("DEBUG") != ""
+	warn = true
 	args := os.Args[1:]
 	mode := runcmd
 	var defaultType sourcetype
@@ -555,6 +557,9 @@ func main() {
 			continue
 		} else if arg == "-sort" || arg == "-sorted" {
 			sorted = false
+			continue
+		} else if arg == "-q" || arg == "-quiet" {
+			warn = false
 			continue
 		} else if arg == "-u" || arg == "-clear" {
 			clearEnv = true
