@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -35,6 +37,12 @@ Options:
   --no-sort / --unsorted = Don't sort (default: do)
   --sort / --sorted = Sort output by default
   -q / --quiet = Don't print errors for invalid lines
+
+Output types:
+  -b / --base64 = Print Base64-encoded (single line, whether printing keys/vals/both)
+  -j / --json = Print JSON map or array
+  -0 / --nul = Print NUL-separated ( {key} \0 {val} \0 )
+  -r / --raw = Print the raw value (most useful with '-p'/'--vals')
 
 Envs:
   NAME=VALUE
@@ -473,11 +481,22 @@ const (
 	values           = "values"
 )
 
+type outputmode string
+
+const (
+	textoutput   outputmode = "text"
+	jsonoutput              = "json"
+	nuloutput               = "nul"
+	base64output            = "base64"
+	rawoutput               = "raw"
+)
+
 func main() {
 	debug = os.Getenv("DEBUG") != ""
 	warn = true
 	args := os.Args[1:]
 	mode := runcmd
+	outmode := textoutput
 	var defaultType sourcetype
 	defaultType = laxfile
 	specifiedDefault := false
@@ -560,6 +579,18 @@ func main() {
 			continue
 		} else if arg == "-q" || arg == "-quiet" {
 			warn = false
+			continue
+		} else if arg == "-0" || arg == "-z" || arg == "-nul" || arg == "-null" {
+			outmode = nuloutput
+			continue
+		} else if arg == "-j" || arg == "-json" {
+			outmode = jsonoutput
+			continue
+		} else if arg == "-b" || arg == "-b64" || arg == "-base64" {
+			outmode = base64output
+			continue
+		} else if arg == "-r" || arg == "-raw" {
+			outmode = rawoutput
 			continue
 		} else if arg == "-u" || arg == "-clear" {
 			clearEnv = true
@@ -672,15 +703,60 @@ func main() {
 			}
 			toDump = sorteddump
 		}
-		for _, v := range toDump {
+		if outmode == jsonoutput {
+			var out interface{}
 			switch mode {
 			case dump:
-				fmt.Printf("%s=%s\n", v.name, v.val)
-			case names:
-				fmt.Println(v.name)
-			case values:
-				fmt.Println(v.val)
+				m := map[string]string{}
+				for _, v := range toDump {
+					m[v.name] = v.val
+				}
+				out = m
+			case names, values:
+				m := []string{}
+				for _, v := range toDump {
+					s := v.name
+					if mode == values {
+						s = v.val
+					}
+					m = append(m, s)
+				}
+				out = m
 			}
+			b, err := json.MarshalIndent(out, "", "  ")
+			if err != nil {
+				log.Fatal(err)
+			}
+			os.Stdout.Write(b)
+			return
+		}
+		for _, v := range toDump {
+			outfields := []string{}
+
+			switch mode {
+			case names, dump:
+				outfields = append(outfields, v.name)
+			}
+			switch mode {
+			case values, dump:
+				outfields = append(outfields, v.val)
+			}
+
+			var sep, term string
+			switch outmode {
+			case textoutput:
+				sep, term = "=", "\n"
+			case nuloutput:
+				sep, term = "\x00", "\x00"
+			case base64output:
+				sep, term = " ", "\n"
+				for i, f := range outfields {
+					outfields[i] = base64.StdEncoding.EncodeToString([]byte(f))
+				}
+			case rawoutput:
+				sep, term = "", ""
+			}
+			fmt.Printf("%s%s", strings.Join(outfields, sep), term)
 		}
 		return
 	}
