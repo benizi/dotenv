@@ -38,6 +38,12 @@ Options:
   --sort / --sorted = Sort output by default
   -q / --quiet = Don't print errors for invalid lines
 
+Interpolation:
+  --sub / --interpolate = Enable interpolation (even when not normally default)
+  --no-sub / --no-interpolate = Disable it (even where normally default)
+  --force-sub / --force-interpolate = Enable interpolation (even w/ single quotes)
+  --reset-sub / --reset-interpolate = Fall back to default, per-source setting
+
 Output types:
   -b / --base64 = Print Base64-encoded (single line, whether printing keys/vals/both)
   -j / --json = Print JSON map or array
@@ -87,6 +93,14 @@ const (
 	laxfile            = "laxfile"
 )
 
+type sublevel int
+
+const (
+	neversub sublevel = iota
+	maybesub
+	forcesub
+)
+
 func (kind sourcetype) rank() int {
 	switch kind {
 	case raw:
@@ -100,11 +114,20 @@ func (kind sourcetype) rank() int {
 	}
 }
 
+func (kind sourcetype) defaultsub() sublevel {
+	switch kind {
+	case shell, laxfile:
+		return maybesub
+	}
+	return neversub
+}
+
 type varsource struct {
 	data     string
 	kind     sourcetype
 	explicit bool
 	optional bool
+	sublevel *sublevel
 }
 
 type envvar struct {
@@ -122,6 +145,21 @@ func parsevar(s string) envvar {
 		val = parts[1]
 	}
 	return envvar{name, val, false}
+}
+
+func (src varsource) getsublevel() sublevel {
+	if src.sublevel != nil {
+		return *src.sublevel
+	}
+	return src.kind.defaultsub()
+}
+
+func (src *varsource) setsublevel(level sublevel) {
+	if src.sublevel == nil {
+		src.sublevel = new(sublevel)
+	}
+	*src.sublevel = level
+	debug.Printf("sublevel = %#+v (%v)", src.sublevel, *src.sublevel)
 }
 
 func (src varsource) parse() ([]envvar, error) {
@@ -374,9 +412,15 @@ func (src varsource) parseOsEnviron() ([]envvar, error) {
 	return vars, nil
 }
 
-func substitutevars(env, raw []envvar) []envvar {
+func (src varsource) substitutevars(env, raw []envvar) []envvar {
 	parsed := []envvar{}
 	vals := map[string]string{}
+	level := src.getsublevel()
+	if level != src.kind.defaultsub() {
+		for i, _ := range raw {
+			raw[i].allowsubs = level != neversub
+		}
+	}
 	// Include original env vars, even if they're being cleared
 	for _, v := range os.Environ() {
 		e := parsevar(v)
@@ -493,6 +537,7 @@ func main() {
 	var defaultType sourcetype
 	defaultType = laxfile
 	specifiedDefault := false
+	var defaultSublevel *sublevel
 	sorted := true
 	clearEnv := false
 	var cmd []string
@@ -522,6 +567,13 @@ func main() {
 			}
 		}
 		specifiedDefault = true
+	}
+
+	setDefaultSublevel := func(level sublevel) {
+		if defaultSublevel == nil {
+			defaultSublevel = new(sublevel)
+		}
+		*defaultSublevel = level
 	}
 
 	for len(args) > 0 {
@@ -588,6 +640,18 @@ func main() {
 		} else if arg == "-u" || arg == "-clear" {
 			clearEnv = true
 			continue
+		} else if arg == "-sub" || arg == "-interpolate" {
+			setDefaultSublevel(maybesub)
+			continue
+		} else if arg == "-no-sub" || arg == "-no-interpolate" {
+			setDefaultSublevel(neversub)
+			continue
+		} else if arg == "-force-sub" || arg == "-force-interpolate" {
+			setDefaultSublevel(forcesub)
+			continue
+		} else if arg == "-reset-sub" || arg == "-reset-interpolate" {
+			defaultSublevel = nil
+			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
@@ -596,6 +660,9 @@ func main() {
 			source.explicit = true
 		} else {
 			debug.Printf("[%s] = attempt file", arg)
+		}
+		if defaultSublevel != nil {
+			source.setsublevel(*defaultSublevel)
 		}
 		debug.Printf("adding source: %#+v\n", source)
 		sources = append(sources, source)
@@ -637,7 +704,7 @@ func main() {
 			debug.Printf("Ignoring.")
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", source.data, err)
 		}
-		parsed = substitutevars(vars, parsed)
+		parsed = source.substitutevars(vars, parsed)
 		vars = append(vars, parsed...)
 	}
 
