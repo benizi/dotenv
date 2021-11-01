@@ -100,10 +100,6 @@ func (kind sourcetype) rank() int {
 	}
 }
 
-func (kind sourcetype) reverse() bool {
-	return kind == raw
-}
-
 type varsource struct {
 	data     string
 	kind     sourcetype
@@ -431,11 +427,8 @@ func (p *prioritysort) Less(i, j int) bool {
 	switch {
 	case ra != rb:
 		return ra < rb
-	case ka.reverse():
-		return pb < pa
-	default:
-		return pa < pb
 	}
+	return pa < pb
 }
 
 func (p *prioritysort) sort() []varsource {
