@@ -43,6 +43,8 @@ Interpolation:
   --no-sub / --no-interpolate = Disable it (even where normally default)
   --force-sub / --force-interpolate = Enable interpolation (even w/ single quotes)
   --reset-sub / --reset-interpolate = Fall back to default, per-source setting
+  -A / --interpolate-any = Accept brackets or a limited subset of chars ('${var}' || '$Simple_vars')
+  -S / --interpolate-strict = Require brackets around names to substitute ('${varname}')
 
 Output types:
   -b / --base64 = Print Base64-encoded (single line, whether printing keys/vals/both)
@@ -70,6 +72,7 @@ var (
 	laxdoubleq = regexp.MustCompile(`^((?:[^\\"]|\\(?s:.))*)"`)
 	laxdiscard = regexp.MustCompile(`^([^\n]*)(?:\n|$)`)
 	tointerp   = regexp.MustCompile(`\$\{([^}]+)\}`)
+	anyinterp  = regexp.MustCompile(`\$(?:\{([^}]+)\}|([A-Za-z0-9_.]+))`)
 )
 
 type debugging bool
@@ -412,7 +415,7 @@ func (src varsource) parseOsEnviron() ([]envvar, error) {
 	return vars, nil
 }
 
-func (src varsource) substitutevars(env, raw []envvar) []envvar {
+func (src varsource) substitutevars(env, raw []envvar, varmatch *regexp.Regexp) []envvar {
 	parsed := []envvar{}
 	vals := map[string]string{}
 	level := src.getsublevel()
@@ -432,10 +435,14 @@ func (src varsource) substitutevars(env, raw []envvar) []envvar {
 	for _, r := range raw {
 		subbed := r.val
 		if r.allowsubs {
-			subbed = tointerp.ReplaceAllStringFunc(subbed, func(s string) string {
-				parts := tointerp.FindStringSubmatch(s)
+			subbed = varmatch.ReplaceAllStringFunc(subbed, func(s string) string {
+				parts := varmatch.FindStringSubmatch(s)
 				if len(parts) > 1 {
-					if val, ok := vals[parts[1]]; ok {
+					name := parts[1]
+					if name == "" && len(parts) > 2 {
+						name = parts[2]
+					}
+					if val, ok := vals[name]; ok {
 						return val
 					}
 				}
@@ -538,6 +545,7 @@ func main() {
 	defaultType = laxfile
 	specifiedDefault := false
 	var defaultSublevel *sublevel
+	varmatch := anyinterp
 	sorted := true
 	clearEnv := false
 	var cmd []string
@@ -652,6 +660,12 @@ func main() {
 		} else if arg == "-reset-sub" || arg == "-reset-interpolate" {
 			defaultSublevel = nil
 			continue
+		} else if arg == "-A" || arg == "-interpolate-any" {
+			varmatch = anyinterp
+			continue
+		} else if arg == "-S" || arg == "-interpolate-strict" {
+			varmatch = tointerp
+			continue
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
@@ -704,7 +718,7 @@ func main() {
 			debug.Printf("Ignoring.")
 			fmt.Fprintf(os.Stderr, "Error parsing %s: %v\n", source.data, err)
 		}
-		parsed = source.substitutevars(vars, parsed)
+		parsed = source.substitutevars(vars, parsed, varmatch)
 		vars = append(vars, parsed...)
 	}
 
