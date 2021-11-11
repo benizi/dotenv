@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/mattn/go-shellwords"
@@ -105,17 +106,33 @@ const (
 	forcesub
 )
 
-func (kind sourcetype) rank() int {
-	switch kind {
-	case raw, jsonmap:
-		return 0
-	case osenv:
-		return 1
-	case file, shell, laxfile:
-		return 2
-	default:
-		return 3
+var (
+	typerankinit sync.Once
+	typerank     map[sourcetype]int
+	typerankmax  int
+)
+
+func inittyperank() {
+	typerank = map[sourcetype]int{}
+	for i, ks := range [][]sourcetype{
+		[]sourcetype{raw},
+		[]sourcetype{jsonmap},
+		[]sourcetype{osenv},
+		[]sourcetype{file, shell, laxfile},
+	} {
+		for _, k := range ks {
+			typerank[k] = i
+		}
+		typerankmax = i + 1
 	}
+}
+
+func (kind sourcetype) rank() int {
+	typerankinit.Do(inittyperank)
+	if rank, ok := typerank[kind]; ok {
+		return rank
+	}
+	return typerankmax
 }
 
 func (kind sourcetype) defaultsub() sublevel {
