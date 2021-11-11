@@ -94,6 +94,7 @@ const (
 	raw                = "raw"
 	osenv              = "osenv"
 	laxfile            = "laxfile"
+	jsonmap            = "jsonmap"
 )
 
 type sublevel int
@@ -106,7 +107,7 @@ const (
 
 func (kind sourcetype) rank() int {
 	switch kind {
-	case raw:
+	case raw, jsonmap:
 		return 0
 	case osenv:
 		return 1
@@ -177,6 +178,8 @@ func (src varsource) parse() ([]envvar, error) {
 		return []envvar{parsevar(src.data)}, nil
 	case osenv:
 		return src.parseOsEnviron()
+	case jsonmap:
+		return src.parseJsonMap()
 	}
 	return nil, fmt.Errorf("Unknown varsource kind: %v (data: %v)", src.kind, src.data)
 }
@@ -411,6 +414,19 @@ func (src varsource) parseOsEnviron() ([]envvar, error) {
 	vars := []envvar{}
 	for _, s := range os.Environ() {
 		vars = append(vars, parsevar(s))
+	}
+	return vars, nil
+}
+
+func (src varsource) parseJsonMap() ([]envvar, error) {
+	vars := []envvar{}
+	var env map[string]string
+	err := json.Unmarshal([]byte(src.data), &env)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to parse JSON [%q]: %v", src.data, err)
+	}
+	for k, v := range env {
+		vars = append(vars, envvar{k, v, false})
 	}
 	return vars, nil
 }
@@ -669,6 +685,8 @@ func main() {
 		} else if assignment.MatchString(arg) {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
+		} else if strings.HasPrefix(arg, "{") && strings.HasSuffix(arg, "}") {
+			source.kind = jsonmap
 		} else if doSplit {
 			debug.Printf("[%s] = pre-split file source", arg)
 			source.explicit = true
