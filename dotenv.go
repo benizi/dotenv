@@ -154,6 +154,7 @@ type varsource struct {
 type envvar struct {
 	name, val string
 	allowsubs bool
+	tombstone bool
 }
 
 func parsevar(s string) envvar {
@@ -165,7 +166,7 @@ func parsevar(s string) envvar {
 	if len(parts) > 1 {
 		val = parts[1]
 	}
-	return envvar{name, val, false}
+	return envvar{name, val, false, false}
 }
 
 func (src varsource) getsublevel() sublevel {
@@ -267,7 +268,7 @@ func (src varsource) parseShell() ([]envvar, error) {
 			} else {
 				debug.Printf("TODO: %q\n", tokens)
 			}
-			vars = append(vars, envvar{key, val, true})
+			vars = append(vars, envvar{key, val, true, false})
 		} else {
 			debug.Printf("TODO: %q\n", tokens)
 			continue
@@ -422,7 +423,7 @@ func (src varsource) parseLax() ([]envvar, error) {
 			trimRegex(&data, laxdiscard)
 			continue
 		}
-		vars = append(vars, envvar{name, val, allowsubs})
+		vars = append(vars, envvar{name, val, allowsubs, false})
 	}
 	return vars, nil
 }
@@ -437,13 +438,22 @@ func (src varsource) parseOsEnviron() ([]envvar, error) {
 
 func (src varsource) parseJsonMap() ([]envvar, error) {
 	vars := []envvar{}
-	var env map[string]string
+	var env map[string]interface{}
 	err := json.Unmarshal([]byte(src.data), &env)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to parse JSON [%q]: %v", src.data, err)
 	}
-	for k, v := range env {
-		vars = append(vars, envvar{k, v, false})
+	for k, rawv := range env {
+		out := envvar{name: k}
+		switch v := rawv.(type) {
+		case nil:
+			out.tombstone = true
+		case string:
+			out.val = v
+		case int:
+			out.val = string(v)
+		}
+		vars = append(vars, out)
 	}
 	return vars, nil
 }
@@ -483,7 +493,7 @@ func (src varsource) substitutevars(env, raw []envvar, varmatch *regexp.Regexp) 
 			})
 		}
 		vals[r.name] = subbed
-		parsed = append(parsed, envvar{r.name, subbed, r.allowsubs})
+		parsed = append(parsed, envvar{r.name, subbed, r.allowsubs, r.tombstone})
 	}
 	return parsed
 }
@@ -539,10 +549,13 @@ func uniqVarsByName(allvars []envvar) ([]string, []envvar) {
 
 	for _, v := range allvars {
 		_, seen := varindex[v.name]
-		if !seen {
+		switch {
+		case !seen:
 			varnames = append(varnames, v.name)
 			varindex[v.name] = len(vars)
 			vars = append(vars, v)
+		case v.tombstone:
+			vars[varindex[v.name]] = v
 		}
 	}
 
@@ -758,6 +771,14 @@ func main() {
 	}
 
 	_, vars = uniqVarsByName(vars)
+
+	setvars := []envvar{}
+	for _, v := range vars {
+		if !v.tombstone {
+			setvars = append(setvars, v)
+		}
+	}
+	vars = setvars
 
 	if len(cmd) == 0 {
 		cmd = []string{"sh"}
