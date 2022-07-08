@@ -633,6 +633,7 @@ func main() {
 	for len(args) > 0 {
 		arg := args[0]
 		args = args[1:]
+		orig := arg
 		debug.Printf("arg[%s] args[%v]", arg, args)
 		source := varsource{kind: notype, data: arg}
 		if specifiedDefault {
@@ -691,7 +692,7 @@ func main() {
 		} else if arg == "-r" || arg == "-raw" {
 			outmode = rawoutput
 			continue
-		} else if arg == "-u" || arg == "-clear" {
+		} else if orig == "-" || arg == "-u" || arg == "-clear" {
 			clearEnv = true
 			continue
 		} else if arg == "-sub" || arg == "-interpolate" {
