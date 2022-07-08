@@ -585,7 +585,7 @@ func main() {
 	debug = os.Getenv("DEBUG") != ""
 	warn = true
 	args := os.Args[1:]
-	mode := runcmd
+	mode, modeset := runcmd, false
 	outmode := textoutput
 	var defaultType sourcetype
 	defaultType = laxfile
@@ -654,13 +654,13 @@ func main() {
 			args = args[1:]
 			source.explicit = true
 		} else if arg == "-o" || arg == "-dump" {
-			mode = dump
+			mode, modeset = dump, true
 			continue
 		} else if arg == "-n" || arg == "-names" {
-			mode = names
+			mode, modeset = names, true
 			continue
 		} else if arg == "-p" || arg == "-vals" {
-			mode = values
+			mode, modeset = values, true
 			continue
 		} else if arg == "-s" || arg == "-shell" {
 			setDefaultType(shell)
@@ -729,6 +729,10 @@ func main() {
 		}
 		debug.Printf("adding source: %#+v\n", source)
 		sources = append(sources, source)
+	}
+
+	if !modeset && outmode != textoutput {
+		mode = dump
 	}
 
 	setDefaultType(defaultType)
