@@ -859,6 +859,7 @@ func main() {
 				log.Fatal(err)
 			}
 			os.Stdout.Write(b)
+			os.Stdout.Write([]byte("\n"))
 			return
 		}
 		for _, v := range toDump {
