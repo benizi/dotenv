@@ -794,9 +794,9 @@ func main() {
 			debug.Printf("[%s] = raw assignment", arg)
 			source.kind = raw
 		} else if strings.HasPrefix(arg, "{") && strings.HasSuffix(arg, "}") {
-			source.kind = jsonmap
+			source.kind, source.explicit = jsonmap, true
 		} else if strings.HasPrefix(arg, "p:") || strings.HasPrefix(arg, "pid:") {
-			source.kind = pid
+			source.kind, source.explicit = pid, true
 		} else if doSplit {
 			debug.Printf("[%s] = pre-split file source", arg)
 			source.explicit = true
