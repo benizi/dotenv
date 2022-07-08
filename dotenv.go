@@ -59,6 +59,7 @@ Envs:
   filename
 `
 	alphanumeric = false
+	sudoenv      = true
 )
 
 // Variables for parsing Python-dotenv-style files "lax" = poorly-defined
@@ -512,7 +513,14 @@ func readenv(p uint64) ([]envvar, error) {
 	environ := fmt.Sprintf("/proc/%d/environ", p)
 	data, err := ioutil.ReadFile(environ)
 	if err != nil {
-		return nil, err
+		if os.Geteuid() <= 0 || !sudoenv {
+			return nil, err
+		}
+		ret := err
+		data, err = exec.Command("sudo", "cat", environ).Output()
+		if err != nil {
+			return nil, ret
+		}
 	}
 	vars := []envvar{}
 	matcher := nonstrict
