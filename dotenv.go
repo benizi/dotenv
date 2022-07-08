@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -96,6 +97,7 @@ const (
 	osenv              = "osenv"
 	laxfile            = "laxfile"
 	jsonmap            = "jsonmap"
+	pid                = "pid"
 )
 
 type sublevel int
@@ -198,6 +200,8 @@ func (src varsource) parse() ([]envvar, error) {
 		return src.parseOsEnviron()
 	case jsonmap:
 		return src.parseJsonMap()
+	case pid:
+		return src.parseFromPid()
 	}
 	return nil, fmt.Errorf("Unknown varsource kind: %v (data: %v)", src.kind, src.data)
 }
@@ -454,6 +458,71 @@ func (src varsource) parseJsonMap() ([]envvar, error) {
 			out.val = string(v)
 		}
 		vars = append(vars, out)
+	}
+	return vars, nil
+}
+
+func (src varsource) parseFromPid() ([]envvar, error) {
+	vars := []envvar{}
+	parts := strings.SplitN(src.data, ":", 3)
+	include := map[string]bool{}
+	fmterr := func(msg string) error {
+		return fmt.Errorf("Failed to parse pid spec [%q]: %s", src.data, msg)
+	}
+	switch {
+	case len(parts) < 2:
+		return nil, fmterr("too few parts")
+	case parts[0] != "p" && parts[0] != "pid":
+		return nil, fmterr("first part should be 'p'/'pid'")
+	case len(parts) == 3:
+		names := parts[2]
+		sep := ","
+		if len(names) > 1 && names[1] == ':' {
+			sep, names = names[0:1], names[2:]
+		}
+		for _, v := range strings.Split(names, sep) {
+			include[v] = true
+		}
+	}
+	p, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return nil, fmterr(fmt.Sprintf("second part should be a PID %v", err))
+	}
+	allvars, err := readenv(p)
+	if err != nil {
+		return nil, fmterr(fmt.Sprintf("couldn't read PID %d env vars %v", p, err))
+	}
+	for _, v := range allvars {
+		if len(include) > 0 && !include[v.name] {
+			continue
+		}
+		vars = append(vars, v)
+	}
+	return vars, nil
+}
+
+func readenv(p uint64) ([]envvar, error) {
+	proc, err := os.Stat("/proc")
+	if err != nil {
+		return nil, err
+	}
+	if !proc.IsDir() {
+		return nil, fmt.Errorf("/proc is not a directory")
+	}
+	environ := fmt.Sprintf("/proc/%d/environ", p)
+	data, err := ioutil.ReadFile(environ)
+	if err != nil {
+		return nil, err
+	}
+	vars := []envvar{}
+	matcher := nonstrict
+	if alphanumeric {
+		matcher = assignment
+	}
+	for _, v := range strings.Split(string(data), "\x00") {
+		if matcher.MatchString(v) {
+			vars = append(vars, parsevar(v))
+		}
 	}
 	return vars, nil
 }
@@ -718,6 +787,8 @@ func main() {
 			source.kind = raw
 		} else if strings.HasPrefix(arg, "{") && strings.HasSuffix(arg, "}") {
 			source.kind = jsonmap
+		} else if strings.HasPrefix(arg, "p:") || strings.HasPrefix(arg, "pid:") {
+			source.kind = pid
 		} else if doSplit {
 			debug.Printf("[%s] = pre-split file source", arg)
 			source.explicit = true
