@@ -26,6 +26,7 @@ var (
 	getID      = regexp.MustCompile(`^(` + identifier + `)=`)
 	comment    = regexp.MustCompile(`^\s*#`)
 	nonstrict  = regexp.MustCompile(`^[^\s=]+=`)
+	pidspec    = regexp.MustCompile(`^(?:pid|p)?:?([1-9][0-9]*)(?::(\w+))?$`)
 	usage      = `Usage: dotenv [options] [mode] [envs] [--] [cmd [args]]
 
 Modes:
@@ -465,29 +466,29 @@ func (src varsource) parseJsonMap() ([]envvar, error) {
 
 func (src varsource) parseFromPid() ([]envvar, error) {
 	vars := []envvar{}
-	parts := strings.SplitN(src.data, ":", 3)
 	include := map[string]bool{}
 	fmterr := func(msg string) error {
 		return fmt.Errorf("Failed to parse pid spec [%q]: %s", src.data, msg)
 	}
-	switch {
-	case len(parts) < 2:
-		return nil, fmterr("too few parts")
-	case parts[0] != "p" && parts[0] != "pid":
-		return nil, fmterr("first part should be 'p'/'pid'")
-	case len(parts) == 3:
-		names := parts[2]
-		sep := ","
-		if len(names) > 1 && names[1] == ':' {
-			sep, names = names[0:1], names[2:]
-		}
-		for _, v := range strings.Split(names, sep) {
+	parts := pidspec.FindStringSubmatch(src.data)
+	if parts == nil {
+		return nil, fmterr("didn't match regexp")
+	}
+	// Skip full match
+	parts = parts[1:]
+	names := parts[1]
+	sep := ","
+	if len(names) > 1 && names[1] == ':' {
+		sep, names = names[0:1], names[2:]
+	}
+	for _, v := range strings.Split(names, sep) {
+		if v != "" {
 			include[v] = true
 		}
 	}
-	p, err := strconv.ParseUint(parts[1], 10, 32)
+	p, err := strconv.ParseUint(parts[0], 10, 32)
 	if err != nil {
-		return nil, fmterr(fmt.Sprintf("second part should be a PID %v", err))
+		return nil, fmterr(fmt.Sprintf("couldn't parse PID %v", err))
 	}
 	allvars, err := readenv(p)
 	if err != nil {
@@ -795,7 +796,7 @@ func main() {
 			source.kind = raw
 		} else if strings.HasPrefix(arg, "{") && strings.HasSuffix(arg, "}") {
 			source.kind, source.explicit = jsonmap, true
-		} else if strings.HasPrefix(arg, "p:") || strings.HasPrefix(arg, "pid:") {
+		} else if pidspec.MatchString(arg) {
 			source.kind, source.explicit = pid, true
 		} else if doSplit {
 			debug.Printf("[%s] = pre-split file source", arg)
